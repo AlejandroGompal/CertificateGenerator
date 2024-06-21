@@ -1,4 +1,5 @@
-#requires -version 2
+# Requires -Modules openssl
+
 <#
 .SYNOPSIS
   This script will help you to generate a CA Root Certificate and a PFX too, so you can
@@ -41,7 +42,7 @@
   Purpose/Change: Initial script development
   
 .EXAMPLE
-  .\PFX-Certificate-Generator FriendlyName "YourCertificate" CnfFilePath ".\my.conf"
+  .\PFX-Certificate-Generator -FriendlyName "YourCertificate" -CnfFilePath ".\my.conf"
 #>
 
 #---------------------------------------------------------[Parameters]--------------------------------------------------------
@@ -111,6 +112,9 @@ Function Generate-Certificate{
   Param()
   
   Begin{
+    $pass = Read-Host 'What is your password?' -AsSecureString
+    $plainPass = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pass))
+
     Write-Log -Entry "Starting Certificate generation..."
   }
   
@@ -120,6 +124,7 @@ Function Generate-Certificate{
       Write-Log -Entry "Generating RSA"
       openssl genrsa `
         -aes256 `
+        -passout pass:$plainPass `
         -out (Join-Out-Path "ca-key.pem") 4096
       Write-Host 
       Write-Log -Entry "Generating a public CA Cert"
@@ -127,6 +132,7 @@ Function Generate-Certificate{
         -new `
         -x509 `
         -sha256 `
+        -passin pass:$plainPass `
         -days 825 `
         -key (Join-Out-Path "ca-key.pem") `
         -out (Join-Out-Path "ca.pem")
@@ -156,12 +162,13 @@ Function Generate-Certificate{
       openssl x509 `
         -req `
         -sha256 `
+        -passin pass:$plainPass `
         -days 825 `
         -in (Join-Out-Path "cert.csr") `
         -CA (Join-Out-Path "ca.pem") `
         -CAkey (Join-Out-Path "ca-key.pem") `
         -out (Join-Out-Path "cert.pem") `
-        -extfile (Join-Out-Path "extfile.cnf") `
+        -extfile $CnfFilePath `
         -CAcreateserial
       
       Write-Host 
@@ -169,6 +176,8 @@ Function Generate-Certificate{
       Write-Log -Entry "Exporting to PFX"
       openssl pkcs12 `
         -export `
+        -passcerts pass:$plainPass `
+        -password pass:$plainPass `
         -inkey (Join-Out-Path "cert-key.pem") `
         -in (Join-Out-Path "cert.pem") `
         -name $FriendlyName -out (Join-Out-Path "certificate.pfx")
@@ -178,7 +187,7 @@ Function Generate-Certificate{
         Write-Log -Entry "Installing Certificates Locally..."
         Import-Certificate -FilePath (Join-Out-Path "ca.pem") -CertStoreLocation Cert:\LocalMachine\Root
         $pass = Read-Host 'What is the private password?' -AsSecureString
-        Import-PfxCertificate -FilePath (Join-Out-Path "certificate.pfx") -CertStoreLocation Cert:\LocalMachine\My -Password $pass -Exportable
+        Import-PfxCertificate -FilePath (Join-Out-Path "certificate.pfx") -CertStoreLocation Cert:\LocalMachine\My -Password $plainPass -Exportable
       }
     }
     
